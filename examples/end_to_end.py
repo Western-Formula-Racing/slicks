@@ -11,6 +11,16 @@ def main():
     # ---------------------------------------------------------
     print("Connecting to Slicks Telemetry Database...")
 
+    # Configure connection. 
+    # For CI, these are pulled from environment variables (GitHub Secrets).
+    # For local use, you can set these in a .env file or call configure() directly.
+    wfr.configure(
+        url=os.getenv("INFLUX_URL"),
+        token=os.getenv("INFLUX_TOKEN"),
+        org=os.getenv("INFLUX_ORG"),
+        db=os.getenv("INFLUX_DB")
+    )
+
     # ---------------------------------------------------------
     # 2. Discover Sensors (Optional but good practice)
     # ---------------------------------------------------------
