@@ -1,4 +1,5 @@
 import os
+from typing import Optional
 from dotenv import load_dotenv
 
 # Load environment variables from .env file if it exists
@@ -6,14 +7,35 @@ load_dotenv()
 
 # InfluxDB Configuration with Environment Overrides
 # This makes the package "Open Source Ready" - anyone can swap these out via .env
-INFLUX_URL = os.getenv("INFLUX_URL", "http://localhost:8086")
-INFLUX_TOKEN = os.getenv("INFLUX_TOKEN", "my-token") 
-INFLUX_ORG = os.getenv("INFLUX_ORG", "Docs") 
-INFLUX_DB = os.getenv("INFLUX_DB", "WFR25")
+INFLUX_URL: str = os.getenv("INFLUX_URL", "http://localhost:8086")
+INFLUX_TOKEN: str = os.getenv("INFLUX_TOKEN", "my-token") 
+INFLUX_ORG: str = os.getenv("INFLUX_ORG", "Docs") 
+INFLUX_DB: str = os.getenv("INFLUX_DB", "WFR25")
 
-def connect_influxdb3(url=None, token=None, org=None, db=None):
+def connect_influxdb3(
+    url: Optional[str] = None,
+    token: Optional[str] = None,
+    org: Optional[str] = None,
+    db: Optional[str] = None,
+) -> None:
     """
     Update the global configuration settings for InfluxDB connection.
+    
+    Call this before using any slicks functions to configure your database.
+    
+    Args:
+        url: InfluxDB host URL (e.g., "https://your-instance.influxdb.cloud")
+        token: Your InfluxDB API token
+        org: Organization name (optional for InfluxDB 3.x)
+        db: Database/bucket name (e.g., "WFR25")
+    
+    Example:
+        >>> import slicks
+        >>> slicks.connect_influxdb3(
+        ...     url="https://us-east-1-1.aws.cloud2.influxdata.com",
+        ...     token="your-api-token",
+        ...     db="WFR25"
+        ... )
     """
     global INFLUX_URL, INFLUX_TOKEN, INFLUX_ORG, INFLUX_DB
     if url: INFLUX_URL = url

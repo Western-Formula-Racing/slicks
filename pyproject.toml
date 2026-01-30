@@ -21,6 +21,7 @@ dependencies = [
     "influxdb3-python>=0.1.0",
     "python-dotenv>=1.0.0",
     "matplotlib>=3.0.0",
+    "tqdm>=4.0.0",
 ]
 
 [project.urls]

@@ -30,6 +30,7 @@ extra_css:
 nav:
   - Home: index.md
   - Getting Started: getting_started.md
+  - Data Scanner: scanner.md
   - Analysis Example: example_analysis.md
   - API Reference: api_reference.md
   - Advanced Usage: advanced_usage.md

@@ -4,3 +4,8 @@ __pycache__/
 site/
 dev/
 sensor_validation/
+
+# Build artifacts
+*.egg-info/
+dist/
+build/
