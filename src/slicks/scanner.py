@@ -6,10 +6,10 @@ Provides an interactive way to browse what time ranges have telemetry data.
 
 from __future__ import annotations
 
+import threading
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from hashlib import md5
 from typing import Callable, Dict, Iterable, List, Optional, Sequence, Tuple
 
 from influxdb_client_3 import InfluxDBClient3
@@ -17,6 +17,7 @@ from tqdm.auto import tqdm
 from zoneinfo import ZoneInfo
 
 from . import config
+from .query_utils import adaptive_query, run_chunks_parallel, PermanentQueryError
 
 UTC = timezone.utc
 
@@ -380,16 +381,21 @@ def scan_data_availability(
     total_chunks = ((end - start).days + initial_chunk_days - 1) // initial_chunk_days
     
     # Fetch bins with progress bar
-    bins = list(_fetch_bins_adaptive(
-        start=start,
-        end=end,
-        table_ref=table_ref,
-        interval=interval,
-        step=step,
-        initial_chunk_days=initial_chunk_days,
-        show_progress=show_progress,
-        total_chunks=total_chunks,
-    ))
+    try:
+        bins = list(_fetch_bins_adaptive(
+            start=start,
+            end=end,
+            table_ref=table_ref,
+            interval=interval,
+            step=step,
+            initial_chunk_days=initial_chunk_days,
+            show_progress=show_progress,
+            total_chunks=total_chunks,
+        ))
+    except PermanentQueryError as e:
+        raise RuntimeError(
+            f"Scan aborted due to non-recoverable error: {e}"
+        ) from e
     
     if not bins:
         return ScanResult({}, timezone)
@@ -428,9 +434,18 @@ def _fetch_bins_adaptive(
     show_progress: bool = True,
     total_chunks: int = 1,
 ) -> Iterable[Tuple[datetime, int]]:
-    """Iterate over bucket start times with counts using adaptive chunking."""
-    
-    def query_grouped_bins(client: InfluxDBClient3, t0: datetime, t1: datetime) -> Sequence[Tuple[datetime, int]]:
+    """Iterate over bucket start times with counts using parallel adaptive chunking."""
+
+    def _make_client() -> InfluxDBClient3:
+        return InfluxDBClient3(
+            host=config.INFLUX_URL,
+            token=config.INFLUX_TOKEN,
+            database=config.INFLUX_DB,
+        )
+
+    def query_grouped_bins(
+        client: InfluxDBClient3, t0: datetime, t1: datetime,
+    ) -> List[Tuple[datetime, int]]:
         sql = f"""
             SELECT
                 DATE_BIN(INTERVAL '{interval}', time, TIMESTAMP '{t0.isoformat()}') AS bucket,
@@ -454,7 +469,9 @@ def _fetch_bins_adaptive(
             rows.append((bucket, int(n)))
         return rows
 
-    def query_exists_per_bin(client: InfluxDBClient3, t0: datetime, t1: datetime) -> List[Tuple[datetime, int]]:
+    def query_exists_per_bin(
+        client: InfluxDBClient3, t0: datetime, t1: datetime,
+    ) -> List[Tuple[datetime, int]]:
         cur = t0
         rows: List[Tuple[datetime, int]] = []
         while cur < t1:
@@ -475,54 +492,56 @@ def _fetch_bins_adaptive(
             cur = nxt
         return rows
 
-    def process_range(client: InfluxDBClient3, t0: datetime, t1: datetime, chunk_days: float):
-        min_exists_span = step * 4
-        if (t1 - t0) <= min_exists_span:
-            for pair in query_exists_per_bin(client, t0, t1):
-                yield pair
-            return
-        try:
-            for pair in query_grouped_bins(client, t0, t1):
-                yield pair
-            return
-        except Exception:
-            mid = t0 + (t1 - t0) / 2
-            if mid <= t0 or mid >= t1:
-                for pair in query_exists_per_bin(client, t0, t1):
-                    yield pair
-                return
-            for pair in process_range(client, t0, mid, chunk_days / 2):
-                yield pair
-            for pair in process_range(client, mid, t1, chunk_days / 2):
-                yield pair
+    min_exists_span = step * 4
 
-    with InfluxDBClient3(
-        host=config.INFLUX_URL,
-        token=config.INFLUX_TOKEN,
-        database=config.INFLUX_DB,
-    ) as client:
-        cur = start
-        
-        # Setup progress bar (works in Jupyter and terminal)
-        pbar = tqdm(
-            total=total_chunks,
-            desc="Scanning",
-            unit="chunk",
-            disable=not show_progress,
+    def process_chunk(
+        client: InfluxDBClient3, t0: datetime, t1: datetime,
+    ) -> List[Tuple[datetime, int]]:
+        """Process one top-level chunk using adaptive_query."""
+        return adaptive_query(
+            client=client,
+            t0=t0,
+            t1=t1,
+            primary_fn=query_grouped_bins,
+            fallback_fn=query_exists_per_bin,
+            min_span=min_exists_span,
         )
-        
-        try:
-            while cur < end:
-                nxt = min(cur + timedelta(days=initial_chunk_days), end)
-                pbar.set_postfix_str(f"{cur.strftime('%b %d')} - {nxt.strftime('%b %d')}")
-                
-                for pair in process_range(client, cur, nxt, initial_chunk_days):
-                    yield pair
-                
-                pbar.update(1)
-                cur = nxt
-        finally:
-            pbar.close()
+
+    # Build chunk list
+    chunks: List[Tuple[datetime, datetime]] = []
+    cur = start
+    while cur < end:
+        nxt = min(cur + timedelta(days=initial_chunk_days), end)
+        chunks.append((cur, nxt))
+        cur = nxt
+
+    # Progress bar
+    pbar = tqdm(
+        total=len(chunks),
+        desc="Scanning",
+        unit="chunk",
+        disable=not show_progress,
+    )
+    pbar_lock = threading.Lock()
+
+    def on_chunk_done(idx: int) -> None:
+        t0, t1 = chunks[idx]
+        with pbar_lock:
+            pbar.set_postfix_str(f"{t0.strftime('%b %d')} - {t1.strftime('%b %d')}")
+            pbar.update(1)
+
+    try:
+        results = run_chunks_parallel(
+            client_factory=_make_client,
+            chunks=chunks,
+            query_fn=process_chunk,
+            max_workers=4,
+            on_chunk_done=on_chunk_done,
+        )
+    finally:
+        pbar.close()
+
+    yield from results
 
 
 def _compress_bins(

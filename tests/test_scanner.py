@@ -264,20 +264,21 @@ class TestScanDataAvailabilityMocked(unittest.TestCase):
         mock_config.INFLUX_URL = "http://localhost:8086"
         mock_config.INFLUX_TOKEN = "test-token"
         mock_config.INFLUX_DB = "test-db"
-        
-        # Mock client to return empty table
+
+        # Mock client to return empty table (parallel mode: no context manager)
         mock_client = MagicMock()
         mock_table = MagicMock()
         mock_table.num_rows = 0
         mock_client.query.return_value = mock_table
-        mock_client_class.return_value.__enter__.return_value = mock_client
-        
+        mock_client.close = MagicMock()
+        mock_client_class.return_value = mock_client
+
         result = scan_data_availability(
             start=datetime(2025, 1, 1),
             end=datetime(2025, 1, 2),
             show_progress=False,
         )
-        
+
         self.assertEqual(len(result), 0)
         self.assertEqual(result.total_rows, 0)
 
@@ -286,21 +287,22 @@ class TestScanDataAvailabilityMocked(unittest.TestCase):
     def test_handles_timezone_aware_inputs(self, mock_config, mock_client_class):
         """Should handle timezone-aware datetime inputs."""
         from zoneinfo import ZoneInfo
-        
+
         mock_config.INFLUX_URL = "http://localhost:8086"
         mock_config.INFLUX_TOKEN = "test-token"
         mock_config.INFLUX_DB = "test-db"
-        
+
         mock_client = MagicMock()
         mock_table = MagicMock()
         mock_table.num_rows = 0
         mock_client.query.return_value = mock_table
-        mock_client_class.return_value.__enter__.return_value = mock_client
-        
+        mock_client.close = MagicMock()
+        mock_client_class.return_value = mock_client
+
         eastern = ZoneInfo("America/Toronto")
         start = datetime(2025, 1, 1, tzinfo=eastern)
         end = datetime(2025, 1, 2, tzinfo=eastern)
-        
+
         # Should not raise
         result = scan_data_availability(
             start=start,
@@ -308,8 +310,30 @@ class TestScanDataAvailabilityMocked(unittest.TestCase):
             timezone="America/Toronto",
             show_progress=False,
         )
-        
+
         self.assertIsInstance(result, ScanResult)
+
+    @patch('slicks.scanner.InfluxDBClient3')
+    @patch('slicks.scanner.config')
+    def test_raises_on_permanent_error(self, mock_config, mock_client_class):
+        """Should raise RuntimeError on permanent errors like auth failure."""
+        mock_config.INFLUX_URL = "http://localhost:8086"
+        mock_config.INFLUX_TOKEN = "bad-token"
+        mock_config.INFLUX_DB = "test-db"
+
+        mock_client = MagicMock()
+        mock_client.query.side_effect = Exception("Unauthorized: invalid token")
+        mock_client.close = MagicMock()
+        mock_client_class.return_value = mock_client
+
+        with self.assertRaises(RuntimeError) as ctx:
+            scan_data_availability(
+                start=datetime(2025, 1, 1),
+                end=datetime(2025, 1, 2),
+                show_progress=False,
+            )
+
+        self.assertIn("non-recoverable", str(ctx.exception).lower())
 
 
 class TestScanDataAvailabilityIntegration(unittest.TestCase):
