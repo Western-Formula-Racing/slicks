@@ -15,7 +15,7 @@ from influxdb_client_3 import InfluxDBClient3
 from tqdm.auto import tqdm
 
 from . import config
-from .query_utils import adaptive_query, run_chunks_parallel, PermanentQueryError
+from .query_utils import adaptive_query, run_chunks_parallel, PermanentQueryError, quote_table
 
 
 def discover_sensors(
@@ -52,9 +52,14 @@ def discover_sensors(
     def _query_distinct(
         client: InfluxDBClient3, t0: datetime, t1: datetime,
     ) -> List[str]:
+        # Ensure safe defaults if config vars are missing or empty
+        schema = config.INFLUX_SCHEMA or "iox"
+        table = config.INFLUX_TABLE or config.INFLUX_DB
+        table_ref = quote_table(schema, table)
+        
         sql = f"""
         SELECT DISTINCT "signalName"
-        FROM "iox"."{config.INFLUX_DB}"
+        FROM {table_ref}
         WHERE time >= '{t0.isoformat()}Z'
         AND time < '{t1.isoformat()}Z'
         """

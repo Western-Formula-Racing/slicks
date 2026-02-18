@@ -3,7 +3,9 @@ from datetime import datetime, timedelta
 import pandas as pd
 from influxdb_client_3 import InfluxDBClient3
 from . import config
+from .query_utils import quote_table
 from .movement_detector import filter_data_in_movement
+
 
 def get_influx_client(url=None, token=None, org=None, db=None):
     """
@@ -18,11 +20,13 @@ def get_influx_client(url=None, token=None, org=None, db=None):
         database=db or config.INFLUX_DB
     )
 
+
 def list_target_sensors():
     """
     Returns the list of DEFAULT sensors configured in config.py.
     """
     return config.SIGNALS
+
 
 def fetch_telemetry(start_time, end_time, signals=None, client=None, filter_movement=True, resample="1s"):
     """
@@ -54,12 +58,18 @@ def fetch_telemetry(start_time, end_time, signals=None, client=None, filter_move
     
     # Construct query
     signal_list = "', '".join(signals)
+    
+    # Ensure safe defaults if config vars are missing or empty
+    schema = config.INFLUX_SCHEMA or "iox"
+    table = config.INFLUX_TABLE or config.INFLUX_DB
+    table_ref = quote_table(schema, table)
+    
     query = f"""
     SELECT 
         time, 
         "signalName", 
         "sensorReading" 
-    FROM "iox"."{config.INFLUX_DB}"
+    FROM {table_ref}
     WHERE 
         "signalName" IN ('{signal_list}')
         AND time >= '{start_time.isoformat()}Z'

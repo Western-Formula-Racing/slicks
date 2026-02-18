@@ -35,6 +35,13 @@ _PERMANENT_ERROR_PATTERNS = (
 )
 
 
+def quote_table(schema: str, table: str) -> str:
+    """Quote table name for SQL, handling schema.table format."""
+    # If the table already contains a dot (and isn't just the schema), assume it might differ?
+    # Actually, InfluxDB 3 usually expects "schema"."table"
+    return f'"{schema}"."{table}"'
+
+
 class PermanentQueryError(Exception):
     """An error that will not resolve by splitting the time range."""
 

@@ -366,10 +366,16 @@ def scan_data_availability(
     # Setup timezone
     tz = ZoneInfo(timezone)
     
-    # Default table
-    if table is None:
-        table = f"iox.{config.INFLUX_DB}"
+    # Default table if not provided
+    if not table:
+        schema = config.INFLUX_SCHEMA or "iox"
+        table_name = config.INFLUX_TABLE or config.INFLUX_DB
+        table = f"{schema}.{table_name}"
     
+    # We still use _quote_table here because `table` might be passed in as "schema.table"
+    # or just "table" (legacy). But to be consistent with other modules, we should
+    # probably try to use the configured schema if the passed table doesn't have one?
+    # For now, let's keep the existing logic but respect the global config default above.
     table_ref = _quote_table(table)
     
     # Determine bin settings

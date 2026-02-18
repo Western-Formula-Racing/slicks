@@ -12,11 +12,18 @@ INFLUX_TOKEN: str = os.getenv("INFLUX_TOKEN", "my-token")
 INFLUX_ORG: str = os.getenv("INFLUX_ORG", "Docs") 
 INFLUX_DB: str = os.getenv("INFLUX_DB", "WFR25")
 
+# Schema and Table Configuration (defaulting to iox.INFLUX_DB pattern)
+INFLUX_SCHEMA: str = os.getenv("INFLUX_SCHEMA", "iox")
+# If env var is not set or empty, default to INFLUX_DB
+INFLUX_TABLE: str = os.getenv("INFLUX_TABLE") or INFLUX_DB
+
 def connect_influxdb3(
     url: Optional[str] = None,
     token: Optional[str] = None,
     org: Optional[str] = None,
     db: Optional[str] = None,
+    schema: Optional[str] = None,
+    table: Optional[str] = None,
 ) -> None:
     """
     Update the global configuration settings for InfluxDB connection.
@@ -28,20 +35,34 @@ def connect_influxdb3(
         token: Your InfluxDB API token
         org: Organization name (optional for InfluxDB 3.x)
         db: Database/bucket name (e.g., "WFR25")
+        schema: IOx schema name (default: "iox")
+        table: IOx table name (default: same as db)
     
     Example:
         >>> import slicks
         >>> slicks.connect_influxdb3(
         ...     url="https://us-east-1-1.aws.cloud2.influxdata.com",
         ...     token="your-api-token",
-        ...     db="WFR25"
+        ...     db="WFR25",
+        ...     table="my_custom_table"
         ... )
     """
-    global INFLUX_URL, INFLUX_TOKEN, INFLUX_ORG, INFLUX_DB
+    global INFLUX_URL, INFLUX_TOKEN, INFLUX_ORG, INFLUX_DB, INFLUX_SCHEMA, INFLUX_TABLE
     if url: INFLUX_URL = url
     if token: INFLUX_TOKEN = token
     if org: INFLUX_ORG = org
-    if db: INFLUX_DB = db
+    
+    # If DB is updated, we might need to update the default table name if it wasn't overridden
+    if db: 
+        INFLUX_DB = db
+        # Only update table if it wasn't explicitly set to something else in this call
+        # and if it currently matches the OLD db name or is unset
+        if not table and (not INFLUX_TABLE or INFLUX_TABLE == db):
+            INFLUX_TABLE = db
+
+    if schema: INFLUX_SCHEMA = schema
+    if table: INFLUX_TABLE = table
+
 
 # Default Sensor Registry
 # In an open-source context, this serves as an "Example Configuration"
