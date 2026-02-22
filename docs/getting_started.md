@@ -95,3 +95,15 @@ df_fast = slicks.fetch_telemetry(start, end, "INV_Motor_Speed", resample="100ms"
 # Lower resolution (5 seconds)
 df_slow = slicks.fetch_telemetry(start, end, "INV_Motor_Speed", resample="5s")
 ```
+
+---
+
+## 4. What's Next?
+
+Once you're comfortable fetching and filtering data, explore the analysis modules:
+
+- **[Data Scanner](scanner.md)** — discover when data exists in your database with interactive calendar views.
+- **[Battery Analysis](advanced_usage.md#5-battery-pack-analysis)** — monitor cell voltages, detect weak cells, and assess pack health via `slicks.battery`.
+- **[Vehicle Dynamics](advanced_usage.md#6-vehicle-dynamics-calculations)** — calculate G-force and estimate speed from RPM via `slicks.calculations`.
+- **[Advanced Usage](advanced_usage.md)** — bulk exports, environment management, movement detection tuning, and more.
+- **[API Reference](api_reference.md)** — full function signatures and return types.
