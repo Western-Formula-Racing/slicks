@@ -325,6 +325,7 @@ def scan_data_availability(
     bin_size: str = "hour",
     include_counts: bool = True,
     show_progress: bool = True,
+    max_workers: int = 4,
 ) -> ScanResult:
     """
     Scan the database for data availability windows.
@@ -397,6 +398,7 @@ def scan_data_availability(
             initial_chunk_days=initial_chunk_days,
             show_progress=show_progress,
             total_chunks=total_chunks,
+            max_workers=max_workers,
         ))
     except PermanentQueryError as e:
         raise RuntimeError(
@@ -439,6 +441,7 @@ def _fetch_bins_adaptive(
     initial_chunk_days: int = 31,
     show_progress: bool = True,
     total_chunks: int = 1,
+    max_workers: int = 4,
 ) -> Iterable[Tuple[datetime, int]]:
     """Iterate over bucket start times with counts using parallel adaptive chunking."""
 
@@ -541,7 +544,7 @@ def _fetch_bins_adaptive(
             client_factory=_make_client,
             chunks=chunks,
             query_fn=process_chunk,
-            max_workers=4,
+            max_workers=max_workers,
             on_chunk_done=on_chunk_done,
         )
     finally:

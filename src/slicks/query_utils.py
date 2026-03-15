@@ -134,6 +134,26 @@ def run_chunks_parallel(
     if not chunks:
         return []
 
+    # Sequential path — avoids nested ThreadPoolExecutor when called from inside
+    # another executor thread (e.g. asyncio run_in_executor). Creating gRPC clients
+    # inside nested thread pools causes "bad value(s) in fds_to_keep" on macOS.
+    if max_workers == 1:
+        ordered: List[T] = []
+        for idx, (t0, t1) in enumerate(chunks):
+            client = client_factory()
+            try:
+                ordered.extend(query_fn(client, t0, t1))
+            except PermanentQueryError:
+                raise
+            finally:
+                try:
+                    client.close()
+                except Exception:
+                    pass
+            if on_chunk_done:
+                on_chunk_done(idx)
+        return ordered
+
     results: dict[int, List[T]] = {}
     lock = threading.Lock()
 
