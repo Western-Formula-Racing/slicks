@@ -7,9 +7,11 @@
 The home baked data pipeline for **Western Formula Racing**.
 
 This package handles:
-1. **Data Ingestion:** Reliable fetching from InfluxDB 3.0.
+1. **Data Ingestion:** Reliable fetching from InfluxDB 3.0 with adaptive chunking.
 2. **Movement Detection:** Smart filtering of "Moving" vs "Idle" car states.
 3. **Sensor Discovery:** Tools to explore available sensors on any given race day.
+4. **Battery Analysis:** Cell-level voltage statistics, weak cell identification, and pack health monitoring.
+5. **Vehicle Dynamics:** G-force calculation and speed estimation from RPM data.
 
 ## Documentation
 
