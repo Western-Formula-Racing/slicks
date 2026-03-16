@@ -16,6 +16,7 @@ class _Scalar:
         self._v = v
 
     def as_py(self):
+        """Return the wrapped Python value."""
         return self._v
 
 
@@ -33,9 +34,11 @@ class _ArrowLike:
 
     @property
     def num_rows(self) -> int:
+        """Number of rows in the result."""
         return len(self._df)
 
     def column(self, name: str) -> List[_Scalar]:
+        """Return a column as a list of _Scalar values with .as_py()."""
         if name not in self._df.columns:
             return []
         return [_Scalar(v) for v in self._df[name]]
@@ -85,12 +88,15 @@ class HttpInfluxClient:
         return _ArrowLike(df)
 
     def close(self):
+        """No-op — kept for interface compatibility with InfluxDBClient3."""
         pass
 
     def __enter__(self):
+        """Context manager entry."""
         return self
 
     def __exit__(self, *_):
+        """Context manager exit."""
         pass
 
 
