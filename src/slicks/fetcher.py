@@ -29,81 +29,110 @@ def list_target_sensors():
     return config.SIGNALS
 
 
-def fetch_telemetry(start_time, end_time, signals=None, client=None, filter_movement=True, resample="1s"):
+def fetch_telemetry(start_time, end_time, signals=None, client=None, filter_movement=True, resample="1s", schema="narrow"):
     """
     Fetch telemetry data for specified signals within a time range.
-    
+
     Args:
         start_time (datetime): Start of the query range.
         end_time (datetime): End of the query range.
-        signals (list or str, optional): List of sensor names or a single sensor name. 
+        signals (list or str, optional): List of sensor names or a single sensor name.
                                          Defaults to config.SIGNALS if None.
         client (InfluxDBClient3, optional): Existing client instance.
         filter_movement (bool): If True, applies movement detection filtering. Defaults to True.
         resample (str or None): Pandas frequency string for resampling (e.g. "1s", "100ms", "5s").
                                 Set to None to disable resampling and get raw data. Defaults to "1s".
+        schema (str): "narrow" (legacy EAV with signalName tag) or "wide" (one field per signal).
+                      Defaults to "narrow" for backwards compatibility.
     """
     if signals is None:
         signals = config.SIGNALS
-    
+
     # Handle single string input for convenience
     if isinstance(signals, str):
         signals = [signals]
-    
+
     if not signals:
         print("Error: No signals specified for fetching.")
         return None
 
     if client is None:
         client = get_influx_client()
-    
-    # Construct query
-    signal_list = "', '".join(signals)
-    
+
     # Ensure safe defaults if config vars are missing or empty
-    schema = config.INFLUX_SCHEMA or "iox"
+    db_schema = config.INFLUX_SCHEMA or "iox"
     table = config.INFLUX_TABLE or config.INFLUX_DB
-    table_ref = quote_table(schema, table)
-    
+    table_ref = quote_table(db_schema, table)
+
+    if schema == "wide":
+        # Wide format: each signal is its own column — SELECT directly, no pivot needed
+        signal_cols = ", ".join(f'"{s}"' for s in signals)
+        query = (
+            f"SELECT time, {signal_cols} "
+            f"FROM {table_ref} "
+            f"WHERE time >= '{start_time.isoformat()}Z' "
+            f"AND time < '{end_time.isoformat()}Z' "
+            f"ORDER BY time ASC"
+        )
+        print(f"Executing wide query for range: {start_time} to {end_time}...")
+        try:
+            df = client.query(query=query, mode="pandas")
+            if df.empty:
+                print("No data found for this range.")
+                return None
+            df = df.set_index("time")
+            if resample:
+                df = df.resample(resample).mean().dropna(how="all")
+            if filter_movement:
+                df = filter_data_in_movement(df)
+            print(f"Fetched {len(df)} rows{' (filtered)' if filter_movement else ''}.")
+            return df
+        except Exception as e:
+            print(f"Error fetching data: {e}")
+            return None
+
+    # --- narrow (legacy EAV) path ---
+    signal_list = "', '".join(signals)
+
     query = f"""
-    SELECT 
-        time, 
-        "signalName", 
-        "sensorReading" 
+    SELECT
+        time,
+        "signalName",
+        "sensorReading"
     FROM {table_ref}
-    WHERE 
+    WHERE
         "signalName" IN ('{signal_list}')
         AND time >= '{start_time.isoformat()}Z'
         AND time < '{end_time.isoformat()}Z'
     ORDER BY time ASC
     """
-    
+
     print(f"Executing query for range: {start_time} to {end_time}...")
     try:
         table = client.query(query=query, mode="pandas")
         if table.empty:
             print("No data found for this range.")
             return None
-            
+
         # Pivot the data
         df = table.pivot_table(
-            index="time", 
-            columns="signalName", 
-            values="sensorReading", 
+            index="time",
+            columns="signalName",
+            values="sensorReading",
             aggfunc='mean'
         )
-        
+
         # Resample to common frequency (if specified)
         if resample:
             df = df.resample(resample).mean().dropna()
-        
+
         # Use the movement detector tool to filter
         if filter_movement:
             df = filter_data_in_movement(df)
-        
+
         print(f"Fetched {len(df)} rows{' (filtered)' if filter_movement else ''}.")
         return df
-        
+
     except Exception as e:
         print(f"Error fetching data: {e}")
         return None
@@ -118,6 +147,7 @@ def fetch_telemetry_chunked(
     chunk_size: timedelta = timedelta(hours=6),
     max_workers: int = 1,
     show_progress: bool = True,
+    schema: str = "narrow",
 ) -> Optional[pd.DataFrame]:
     """
     Fetch telemetry with automatic time-splitting when InfluxDB's per-query
@@ -139,6 +169,7 @@ def fetch_telemetry_chunked(
                     split further on file-limit errors. Default: 6 hours.
         max_workers: Parallel workers for top-level chunks (1 = sequential).
         show_progress: Print progress messages.
+        schema: "narrow" (legacy EAV) or "wide" (one field per signal).
 
     Returns:
         Combined DataFrame with DatetimeIndex, or None if no data found.
@@ -153,34 +184,52 @@ def fetch_telemetry_chunked(
     if client is None:
         client = get_influx_client()
 
-    signal_list = "', '".join(signals)
-    schema = config.INFLUX_SCHEMA or "iox"
+    db_schema = config.INFLUX_SCHEMA or "iox"
     table = config.INFLUX_TABLE or config.INFLUX_DB
-    table_ref = quote_table(schema, table)
+    table_ref = quote_table(db_schema, table)
 
     def _fmt(dt: datetime) -> str:
         """Format datetime as UTC ISO string for SQL, safe for both naive and tz-aware."""
         return dt.strftime("%Y-%m-%dT%H:%M:%S") + "Z"
 
-    def _fetch_chunk(cli: InfluxDBClient3, t0: datetime, t1: datetime) -> List[pd.DataFrame]:
-        """Fetch one time window; return list-of-DataFrame for adaptive_query."""
-        query = (
-            f"SELECT time, \"signalName\", \"sensorReading\" "
-            f"FROM {table_ref} "
-            f"WHERE \"signalName\" IN ('{signal_list}') "
-            f"AND time >= '{_fmt(t0)}' AND time < '{_fmt(t1)}' "
-            f"ORDER BY time ASC"
-        )
-        raw = cli.query(query=query, mode="pandas")
-        if raw.empty:
-            return []
-        df = raw.pivot_table(
-            index="time",
-            columns="signalName",
-            values="sensorReading",
-            aggfunc="mean",
-        )
-        return [df]
+    if schema == "wide":
+        signal_cols = ", ".join(f'"{s}"' for s in signals)
+
+        def _fetch_chunk(cli: InfluxDBClient3, t0: datetime, t1: datetime) -> List[pd.DataFrame]:
+            """Fetch one wide time window; return list-of-DataFrame for adaptive_query."""
+            query = (
+                f"SELECT time, {signal_cols} "
+                f"FROM {table_ref} "
+                f"WHERE time >= '{_fmt(t0)}' AND time < '{_fmt(t1)}' "
+                f"ORDER BY time ASC"
+            )
+            raw = cli.query(query=query, mode="pandas")
+            if raw.empty:
+                return []
+            df = raw.set_index("time")
+            return [df]
+    else:
+        signal_list = "', '".join(signals)
+
+        def _fetch_chunk(cli: InfluxDBClient3, t0: datetime, t1: datetime) -> List[pd.DataFrame]:
+            """Fetch one narrow time window; return list-of-DataFrame for adaptive_query."""
+            query = (
+                f"SELECT time, \"signalName\", \"sensorReading\" "
+                f"FROM {table_ref} "
+                f"WHERE \"signalName\" IN ('{signal_list}') "
+                f"AND time >= '{_fmt(t0)}' AND time < '{_fmt(t1)}' "
+                f"ORDER BY time ASC"
+            )
+            raw = cli.query(query=query, mode="pandas")
+            if raw.empty:
+                return []
+            df = raw.pivot_table(
+                index="time",
+                columns="signalName",
+                values="sensorReading",
+                aggfunc="mean",
+            )
+            return [df]
 
     # Split full range into top-level chunks, then use adaptive_query per chunk
     chunks: List[tuple] = []
