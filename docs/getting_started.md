@@ -54,8 +54,8 @@ end   = datetime(2025, 9, 28, 14, 0, 0) # Sept 28, 2025 at 02:00 PM
 You can request a single sensor or a list of sensors.
 
 ```python
-# Fetch Motor Speed
-df = slicks.fetch_telemetry(start, end, "INV_Motor_Speed")
+# Fetch Motor Speed (wide format — each signal is a column)
+df = slicks.fetch_telemetry(start, end, "INV_Motor_Speed", schema="wide")
 
 if df is not None:
     print(df.head())

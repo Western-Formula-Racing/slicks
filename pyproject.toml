@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "slicks"
-version = "0.2.0"
+version = "0.2.1"
 description = "The home baked data pipeline for Western Formula Racing"
 readme = "README.md"
 authors = [
@@ -21,6 +21,7 @@ dependencies = [
     "influxdb3-python>=0.1.0",
     "influxdb-client>=1.30.0",
     "cantools>=39.0.0",
+    "httpx>=0.27.0",
     "python-dotenv>=1.0.0",
     "matplotlib>=3.0.0",
     "tqdm>=4.0.0",

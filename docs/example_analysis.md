@@ -29,14 +29,14 @@ Connecting to Slicks Telemetry Database...
 
 ## 2. Discovering Sensors
 
-Before fetching data, we need to know exactly what sensors were recording during our test session. We'll scan a specific window to see the available signals.
+Before fetching data, we can check what sensors are available. With wide format, this is an instant metadata lookup — no time range needed.
 
 ```python
 start_time = datetime(2025, 9, 28, 20, 20, 0)
 end_time   = datetime(2025, 9, 28, 21, 0, 0)
 
-print(f"Scanning for sensors between {start_time} and {end_time}...")
-available_sensors = slicks.discover_sensors(start_time, end_time)
+# Wide format: instant column metadata lookup
+available_sensors = slicks.discover_sensors(start_time, end_time, schema="wide")
 
 # Filter for Inverter (INV) related sensors to narrow our search
 inv_sensors = [s for s in available_sensors if s.startswith("INV_")]
@@ -45,8 +45,6 @@ print(f"Found {len(inv_sensors)} Inverter sensors. Examples: {inv_sensors[:5]}")
 
 **Output:**
 ```text
-Scanning for sensors between 2025-09-28 20:20:00 and 2025-09-28 21:00:00...
-Discovering sensors from 2025-09-28 20:20:00 to 2025-09-28 21:00:00...
 Discovery Complete. Found 342 unique sensors.
 Found 91 Inverter sensors. Examples: ['INV_Analog_Input_1', 'INV_Analog_Input_2', 'INV_Analog_Input_3', 'INV_Analog_Input_4', 'INV_Analog_Input_5']
 ```
@@ -62,9 +60,14 @@ target_signals = ["INV_Motor_Speed", "INV_DC_Bus_Current"]
 
 print(f"Fetching data for: {target_signals}...")
 
-# Fetch 1-second resampled data. 
+# Fetch 1-second resampled data in wide format.
 # We disable filter_movement to capture the full session including startup.
-df = slicks.fetch_telemetry(start_time, end_time, signals=target_signals, filter_movement=False)
+df = slicks.fetch_telemetry(
+    start_time, end_time,
+    signals=target_signals,
+    filter_movement=False,
+    schema="wide",
+)
 
 if df is not None:
     print(f"Successfully loaded {len(df)} data points.")
@@ -77,8 +80,8 @@ Fetching data for: ['INV_Motor_Speed', 'INV_DC_Bus_Current']...
 Executing query for range: 2025-09-28 20:20:00 to 2025-09-28 21:00:00...
 Fetched 117 rows.
 Successfully loaded 117 data points.
-signalName           INV_DC_Bus_Current  INV_Motor_Speed
-time                                                    
+                     INV_DC_Bus_Current  INV_Motor_Speed
+time
 2025-09-28 20:21:27                 0.0              0.0
 2025-09-28 20:21:28                 0.0              0.0
 2025-09-28 20:21:29                 0.0              0.0

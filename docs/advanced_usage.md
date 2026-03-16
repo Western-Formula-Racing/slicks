@@ -1,24 +1,42 @@
 # Advanced Usage & Workflows
 
-## 1. Dynamic Sensor Discovery
-Not sure what sensors are available for a specific test day? Don't guess. Use the discovery tool.
+## 1. Wide vs Narrow Format
+
+The database stores telemetry in **wide format**: each CAN signal is its own column. This is faster to query and requires no pivot step.
+
+```python
+import slicks
+from datetime import datetime
+
+start = datetime(2025, 9, 28, 12, 0)
+end   = datetime(2025, 9, 28, 14, 0)
+
+# Wide format (default, preferred) — direct column access
+df = slicks.fetch_telemetry(start, end, ["INV_Motor_Speed", "PackCurrent"], schema="wide")
+
+# Narrow format (legacy EAV) — only for old data that was never migrated
+df = slicks.fetch_telemetry(start, end, ["INV_Motor_Speed", "PackCurrent"], schema="narrow")
+```
+
+Use `schema="wide"` for all new work.
+
+---
+
+## 2. Dynamic Sensor Discovery
+Not sure what sensors are available? With wide format, discovery is instant — it reads column metadata rather than scanning data rows.
 
 ```python
 from slicks import discover_sensors
-from datetime import datetime
 
-start = datetime(2025, 9, 28)
-end = datetime(2025, 9, 30)
-
-# This physically queries the DB to find what tags exist
-available_sensors = discover_sensors(start, end)
+# Wide: instant metadata lookup (no time range needed)
+available_sensors = discover_sensors(None, None, schema="wide")
 
 print(f"Found {len(available_sensors)} sensors:")
 for sensor in available_sensors:
     print(f" - {sensor}")
 ```
 
-## 2. Managing Environments
+## 3. Managing Environments
 You often need to switch between `Development`, `Testing`, and `Production` databases, or switch to a local replay server.
 
 ### Option A: Environment Variables (Best for CI/CD)
@@ -38,7 +56,7 @@ slicks.connect_influxdb3(
 )
 ```
 
-## 3. Bulk Export for CSV Analysis
+## 4. Bulk Export for CSV Analysis
 If you need to hand off data to the aerodynamics team who uses Excel/MATLAB, use the bulk fetcher. It handles day-by-day chunking to avoid crashing the computer.
 
 ```python
@@ -48,14 +66,41 @@ from slicks import bulk_fetch_season
 bulk_fetch_season(start, end, output_file="full_weekend_data.csv")
 ```
 
-## 4. Customizing Movement Detection
+## 5. Writing CAN Data (Wide Format)
+
+If you're ingesting raw CAN bus data (e.g., from a replay script or live logger), use `WideWriter`. It decodes CAN frames using a DBC file and writes them as wide format line protocol.
+
+```python
+from slicks import WideWriter
+
+writer = WideWriter(
+    url="http://localhost:8086",
+    token="my-token",
+    bucket="WFR26",
+    measurement="WFR26",
+    dbc_path="path/to/WFR26.dbc",
+)
+
+# Decode and queue a CAN frame
+writer.decode_and_queue(can_id=0x200, data=bytes([0x01, 0x02, ...]), ts_ns=timestamp_ns)
+
+# Flush remaining data when done
+writer.close()
+```
+
+Each decoded CAN message becomes one row with all of its signals as fields:
+```
+WFR26,messageName=BMS_Status,canId=512 PackCurrent=-3264.0,SOC=85.0 1700000000000000000
+```
+
+## 6. Customizing Movement Detection
 If you are analyzing **Charging** or **Static Testing**, the default movement filter will hide your data. Disable it:
 
 ```python
 # Fetch Battery Current even when car is stopped
 df = slicks.fetch_telemetry(
-    start, end, 
-    signals="PackCurrent", 
+    start, end,
+    signals="PackCurrent",
     filter_movement=False
 )
 ```

@@ -16,3 +16,4 @@ coverage.xml
 htmlcov/
 /examples/__pycache__
 .DS_Store
+CLAUDE.md

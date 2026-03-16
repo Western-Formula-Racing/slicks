@@ -1,6 +1,6 @@
 import os
 from datetime import datetime, timedelta
-from typing import List, Optional
+from typing import Any, List, Optional
 import pandas as pd
 from influxdb_client_3 import InfluxDBClient3
 from . import config
@@ -8,17 +8,113 @@ from .query_utils import quote_table, adaptive_query, run_chunks_parallel
 from .movement_detector import filter_data_in_movement
 
 
+class _Scalar:
+    """Wraps a Python value to mimic a pyarrow scalar (.as_py() interface)."""
+    __slots__ = ("_v",)
+
+    def __init__(self, v):
+        self._v = v
+
+    def as_py(self):
+        return self._v
+
+
+class _ArrowLike:
+    """
+    Wraps a pandas DataFrame to expose the minimal pyarrow Table interface
+    used by this codebase (.num_rows, .column(name)).
+
+    Allows HttpInfluxClient.query() to be a drop-in for InfluxDBClient3.query()
+    in callers that iterate over result columns with .as_py().
+    """
+
+    def __init__(self, df: pd.DataFrame):
+        self._df = df
+
+    @property
+    def num_rows(self) -> int:
+        return len(self._df)
+
+    def column(self, name: str) -> List[_Scalar]:
+        if name not in self._df.columns:
+            return []
+        return [_Scalar(v) for v in self._df[name]]
+
+
+class HttpInfluxClient:
+    """
+    HTTP-based InfluxDB 3 client using /api/v3/query_sql with Parquet responses.
+
+    Drop-in replacement for InfluxDBClient3 for environments where gRPC/Arrow Flight
+    is blocked (e.g. HTTPS Cloudflare tunnels). Implements the same .query() interface.
+
+    Auto-selected by get_influx_client() when the host URL starts with https://.
+    """
+
+    def __init__(self, host: str, token: str, database: str):
+        self._host = host.rstrip("/")
+        self._token = token
+        self._database = database
+
+    def query(self, query: str, mode: str = None, database: str = None, **kwargs) -> Any:
+        import httpx
+
+        db = database or self._database
+        resp = httpx.post(
+            f"{self._host}/api/v3/query_sql",
+            headers={
+                "Authorization": f"Token {self._token}",
+                "Accept": "application/json",
+                "Content-Type": "application/json",
+            },
+            json={"db": db, "q": query},
+            timeout=120.0,
+        )
+        if not resp.is_success:
+            try:
+                err = resp.json().get("error", resp.text)
+            except Exception:
+                err = resp.text
+            raise Exception(f"InfluxDB HTTP query error [{resp.status_code}]: {err}")
+
+        rows = resp.json() if resp.content else []
+        df = pd.DataFrame(rows) if rows else pd.DataFrame()
+
+        if mode == "pandas":
+            return df
+        return _ArrowLike(df)
+
+    def close(self):
+        pass
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_):
+        pass
+
+
 def get_influx_client(url=None, token=None, org=None, db=None):
     """
-    Returns an InfluxDB Client.
-    Allows explicit overriding of credentials for library usage,
-    otherwise falls back to config/env vars.
+    Returns an InfluxDB client appropriate for the configured host.
+
+    - https:// hosts → HttpInfluxClient (REST /api/v3/query_sql, Parquet)
+      Used for remote Cloudflare-tunnelled servers where gRPC/Flight is blocked.
+    - http:// hosts  → InfluxDBClient3 (Arrow Flight SQL / gRPC)
+      Used for local Docker stacks with direct access.
     """
+    host = url or config.INFLUX_URL
+    tok = token or config.INFLUX_TOKEN
+    database = db or config.INFLUX_DB
+
+    if host.startswith("https://"):
+        return HttpInfluxClient(host=host, token=tok, database=database)
+
     return InfluxDBClient3(
-        host=url or config.INFLUX_URL,
-        token=token or config.INFLUX_TOKEN,
-        org=org or config.INFLUX_ORG, # Client3 uses 'org' param often, though strictly 'database' is key for IOx
-        database=db or config.INFLUX_DB
+        host=host,
+        token=tok,
+        org=org or config.INFLUX_ORG,
+        database=database,
     )
 
 

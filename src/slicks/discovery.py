@@ -12,10 +12,10 @@ import threading
 from datetime import datetime, timedelta
 from typing import List, Optional
 
-from influxdb_client_3 import InfluxDBClient3
 from tqdm.auto import tqdm
 
 from . import config
+from .fetcher import get_influx_client
 from .query_utils import adaptive_query, run_chunks_parallel, PermanentQueryError, quote_table
 from .writer import NON_SIGNAL_COLS
 
@@ -24,7 +24,7 @@ def discover_sensors(
     start_time: datetime,
     end_time: datetime,
     chunk_size_days: int = 7,
-    client: Optional[InfluxDBClient3] = None,
+    client=None,
     show_progress: bool = True,
     schema: str = "narrow",
 ) -> List[str]:
@@ -53,11 +53,7 @@ def discover_sensors(
 
     if schema == "wide":
         # Instant metadata lookup — no data scan needed
-        cli = InfluxDBClient3(
-            host=config.INFLUX_URL,
-            token=config.INFLUX_TOKEN,
-            database=config.INFLUX_DB,
-        )
+        cli = get_influx_client()
         sql = (
             f"SELECT column_name FROM information_schema.columns "
             f"WHERE table_schema = '{db_schema}' AND table_name = '{table}'"
@@ -74,12 +70,8 @@ def discover_sensors(
 
     # --- narrow (legacy EAV) path ---
 
-    def _make_client() -> InfluxDBClient3:
-        return InfluxDBClient3(
-            host=config.INFLUX_URL,
-            token=config.INFLUX_TOKEN,
-            database=config.INFLUX_DB,
-        )
+    def _make_client():
+        return get_influx_client()
 
     def _query_distinct(
         client: InfluxDBClient3, t0: datetime, t1: datetime,
