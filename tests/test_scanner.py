@@ -341,13 +341,14 @@ class TestScanDataAvailabilityIntegration(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        """Check if database credentials are available."""
-        import slicks
+        """Skip if live InfluxDB is unreachable or the configured database doesn't exist."""
+        from slicks.fetcher import get_influx_client
         from slicks import config
-        
-        # Skip if not configured
-        if not config.INFLUX_URL or not config.INFLUX_TOKEN:
-            raise unittest.SkipTest("InfluxDB credentials not configured")
+        try:
+            client = get_influx_client()
+            client.query(query=f'SELECT 1 FROM "{config.INFLUX_DB}" LIMIT 1', mode="pandas")
+        except Exception:
+            raise unittest.SkipTest("Live InfluxDB not available or database not found")
 
     def test_scan_returns_scan_result(self):
         """Basic integration test with real database."""

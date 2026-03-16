@@ -22,7 +22,7 @@ from slicks.discovery import discover_sensors
 class TestDiscoverSensorsMocked(unittest.TestCase):
     """Tests for discover_sensors with mocked InfluxDB."""
 
-    @patch('slicks.discovery.InfluxDBClient3')
+    @patch('slicks.discovery.get_influx_client')
     @patch('slicks.discovery.config')
     def test_returns_sorted_unique_sensors(self, mock_config, mock_client_class):
         """Should return sorted deduplicated sensor list."""
@@ -54,7 +54,7 @@ class TestDiscoverSensorsMocked(unittest.TestCase):
 
         self.assertEqual(result, ["SensorA", "SensorB"])
 
-    @patch('slicks.discovery.InfluxDBClient3')
+    @patch('slicks.discovery.get_influx_client')
     @patch('slicks.discovery.config')
     def test_returns_empty_list_when_no_data(self, mock_config, mock_client_class):
         """Should return empty list when no sensors found."""
@@ -77,7 +77,7 @@ class TestDiscoverSensorsMocked(unittest.TestCase):
 
         self.assertEqual(result, [])
 
-    @patch('slicks.discovery.InfluxDBClient3')
+    @patch('slicks.discovery.get_influx_client')
     @patch('slicks.discovery.config')
     def test_raises_on_permanent_error(self, mock_config, mock_client_class):
         """Should raise RuntimeError on auth failure."""
@@ -97,7 +97,7 @@ class TestDiscoverSensorsMocked(unittest.TestCase):
                 show_progress=False,
             )
 
-    @patch('slicks.discovery.InfluxDBClient3')
+    @patch('slicks.discovery.get_influx_client')
     @patch('slicks.discovery.config')
     def test_filters_none_values(self, mock_config, mock_client_class):
         """Should skip None values in the signal name column."""
@@ -128,7 +128,7 @@ class TestDiscoverSensorsMocked(unittest.TestCase):
 
         self.assertEqual(result, ["SensorA"])
 
-    @patch('slicks.discovery.InfluxDBClient3')
+    @patch('slicks.discovery.get_influx_client')
     @patch('slicks.discovery.config')
     def test_default_chunk_size_is_7_days(self, mock_config, mock_client_class):
         """Default chunk_size_days=7 should produce 2 chunks for 10-day range."""
@@ -152,7 +152,7 @@ class TestDiscoverSensorsMocked(unittest.TestCase):
         # 10-day range with 7-day chunks = 2 chunks, each triggers at least 1 query
         self.assertGreaterEqual(mock_client.query.call_count, 2)
 
-    @patch('slicks.discovery.InfluxDBClient3')
+    @patch('slicks.discovery.get_influx_client')
     @patch('slicks.discovery.config')
     def test_backward_compatible_client_param(self, mock_config, mock_client_class):
         """Passing client= should not raise (backward compat), even though unused."""

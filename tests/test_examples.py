@@ -6,6 +6,19 @@ import importlib.util
 # Ensure src is in path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../src')))
 
+def _influx_available() -> bool:
+    sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../src')))
+    try:
+        from slicks.fetcher import get_influx_client
+        from slicks import config
+        client = get_influx_client()
+        client.query(query=f'SELECT 1 FROM "{config.INFLUX_DB}" LIMIT 1', mode="pandas")
+        return True
+    except Exception:
+        return False
+
+
+@unittest.skipUnless(_influx_available(), "Live InfluxDB not available or database not found")
 class TestExamples(unittest.TestCase):
     def test_end_to_end_example(self):
         """

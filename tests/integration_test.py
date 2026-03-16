@@ -7,9 +7,28 @@ import pandas as pd
 # Ensure src is in path so we can import slicks
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../src')))
 
-from slicks.fetcher import fetch_telemetry
+from slicks.fetcher import fetch_telemetry, get_influx_client
 from slicks.movement_detector import detect_movement_ratio
+from slicks import config
 
+
+def _influx_available() -> bool:
+    """Return True if the configured InfluxDB instance is reachable and has data."""
+    try:
+        client = get_influx_client()
+        client.query(
+            query=f"SELECT 1 FROM \"{config.INFLUX_DB}\" LIMIT 1",
+            mode="pandas",
+        )
+        return True
+    except Exception:
+        return False
+
+
+_SKIP_REASON = "Live InfluxDB not available or configured database not found"
+
+
+@unittest.skipUnless(_influx_available(), _SKIP_REASON)
 class TestTelemetryPipeline(unittest.TestCase):
     def setUp(self):
         # Time range as specified: Sept 28-30
