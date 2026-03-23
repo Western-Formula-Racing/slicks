@@ -1,4 +1,5 @@
 import os
+import warnings
 from datetime import datetime, timedelta
 from typing import Any, List, Optional
 import pandas as pd
@@ -131,7 +132,7 @@ def list_target_sensors():
     return config.SIGNALS
 
 
-def fetch_telemetry(start_time, end_time, signals=None, client=None, filter_movement=True, resample="1s", schema="narrow"):
+def fetch_telemetry(start_time, end_time, signals=None, client=None, filter_movement=True, resample="1s", schema="wide"):
     """
     Fetch telemetry data for specified signals within a time range.
 
@@ -144,8 +145,7 @@ def fetch_telemetry(start_time, end_time, signals=None, client=None, filter_move
         filter_movement (bool): If True, applies movement detection filtering. Defaults to True.
         resample (str or None): Pandas frequency string for resampling (e.g. "1s", "100ms", "5s").
                                 Set to None to disable resampling and get raw data. Defaults to "1s".
-        schema (str): "narrow" (legacy EAV with signalName tag) or "wide" (one field per signal).
-                      Defaults to "narrow" for backwards compatibility.
+        schema (str): "wide" (default, one field per signal) or "narrow" (legacy EAV, deprecated).
     """
     if signals is None:
         signals = config.SIGNALS
@@ -193,7 +193,13 @@ def fetch_telemetry(start_time, end_time, signals=None, client=None, filter_move
             print(f"Error fetching data: {e}")
             return None
 
-    # --- narrow (legacy EAV) path ---
+    # --- narrow (legacy EAV) path — deprecated, wide schema is now standard ---
+    warnings.warn(
+        "schema='narrow' is deprecated and will be removed in a future release. "
+        "WFR has moved to wide schema — use schema='wide' (now the default).",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     signal_list = "', '".join(signals)
 
     query = f"""
@@ -249,7 +255,7 @@ def fetch_telemetry_chunked(
     chunk_size: timedelta = timedelta(hours=6),
     max_workers: int = 1,
     show_progress: bool = True,
-    schema: str = "narrow",
+    schema: str = "wide",
 ) -> Optional[pd.DataFrame]:
     """
     Fetch telemetry with automatic time-splitting when InfluxDB's per-query
@@ -271,7 +277,7 @@ def fetch_telemetry_chunked(
                     split further on file-limit errors. Default: 6 hours.
         max_workers: Parallel workers for top-level chunks (1 = sequential).
         show_progress: Print progress messages.
-        schema: "narrow" (legacy EAV) or "wide" (one field per signal).
+        schema: "wide" (default, one field per signal) or "narrow" (legacy EAV, deprecated).
 
     Returns:
         Combined DataFrame with DatetimeIndex, or None if no data found.
