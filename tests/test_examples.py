@@ -7,13 +7,23 @@ import importlib.util
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../src')))
 
 def _influx_available() -> bool:
+    """Return True only if the CI test time window has wide-schema data."""
     sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../src')))
     try:
         from slicks.fetcher import get_influx_client
         from slicks import config
         client = get_influx_client()
-        client.query(query=f'SELECT 1 FROM "{config.INFLUX_DB}" LIMIT 1', mode="pandas")
-        return True
+        result = client.query(
+            query=(
+                f'SELECT "INV_Motor_Speed" FROM "{config.INFLUX_DB}" '
+                f"WHERE time >= TIMESTAMP '2025-09-28T20:20:00Z' "
+                f"  AND time <= TIMESTAMP '2025-09-28T21:00:00Z' "
+                f'  AND "INV_Motor_Speed" IS NOT NULL '
+                f"LIMIT 1"
+            ),
+            mode="pandas",
+        )
+        return len(result) > 0
     except Exception:
         return False
 
