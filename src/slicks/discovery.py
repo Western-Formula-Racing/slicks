@@ -2,13 +2,14 @@
 Sensor discovery module.
 
 Scans the database for all unique sensor names within a time range.
-Uses adaptive chunking with parallel execution for narrow schema.
-For wide schema, uses instant information_schema.columns metadata lookup.
+For wide schema (default), uses an instant information_schema.columns metadata lookup.
+For narrow schema (legacy EAV), uses adaptive chunking with parallel execution.
 """
 
 from __future__ import annotations
 
 import threading
+import warnings
 from datetime import datetime, timedelta
 from typing import List, Optional
 
@@ -26,16 +27,17 @@ def discover_sensors(
     chunk_size_days: int = 7,
     client=None,
     show_progress: bool = True,
-    schema: str = "narrow",
+    schema: str = "wide",
 ) -> List[str]:
     """
     Scan the database for ALL unique sensor names within the time range.
 
-    For ``schema="wide"``, uses an instant ``information_schema.columns`` metadata
-    lookup (no data scan, no adaptive bisection, ignores time range and chunk params).
+    For ``schema="wide"`` (default), uses an instant ``information_schema.columns``
+    metadata lookup (no data scan, no adaptive bisection, ignores time range and
+    chunk params).
 
-    For ``schema="narrow"`` (default), uses adaptive chunking with parallel execution
-    to handle server resource limits efficiently.
+    For ``schema="narrow"`` (legacy EAV, deprecated), uses adaptive chunking with
+    parallel execution to handle server resource limits efficiently.
 
     Args:
         start_time: Start of scan range (narrow schema only).
@@ -43,7 +45,7 @@ def discover_sensors(
         chunk_size_days: Days per chunk (default 7, narrow schema only).
         client: Ignored (kept for backward compatibility).
         show_progress: Show progress bar (default True, narrow schema only).
-        schema: "narrow" (legacy EAV) or "wide" (one field per signal).
+        schema: "wide" (default, one column per signal) or "narrow" (legacy EAV, deprecated).
 
     Returns:
         Sorted list of unique sensor name strings.
@@ -68,7 +70,13 @@ def discover_sensors(
             if v.as_py() is not None and v.as_py() not in NON_SIGNAL_COLS
         )
 
-    # --- narrow (legacy EAV) path ---
+    # --- narrow (legacy EAV) path — deprecated, wide schema is now standard ---
+    warnings.warn(
+        "schema='narrow' is deprecated and will be removed in a future release. "
+        "WFR has moved to wide schema — use schema='wide' (now the default).",
+        DeprecationWarning,
+        stacklevel=2,
+    )
 
     def _make_client():
         return get_influx_client()
