@@ -27,18 +27,18 @@ pip install -e .
 Here is the minimal code needed to connect to the database and download data for a specific sensor.
 
 ### Step 1: Import and Configure
-The package connects to the InfluxDB database automatically using defaults, but you can configure it explicitly.
+The package connects to the TimescaleDB database automatically using defaults, but you can configure it explicitly.
 
 ```python
 import slicks
 from datetime import datetime
 
 # Optional: Configure manually (or use .env file / defaults)
-slicks.connect_influxdb3(
-    url="http://your-influx-server:8086",
-    token="your-token-here", # Ask Data Lead for your token
+slicks.connect_timescaledb(
+    dsn="http://your-postgres-server:8086",
+    "your-token-here", # Ask Data Lead for your token
     org="Docs",
-    db="WFR25"
+    table="WFR25"
 )
 ```
 

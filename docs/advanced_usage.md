@@ -42,17 +42,17 @@ You often need to switch between `Development`, `Testing`, and `Production` data
 ### Option A: Environment Variables (Best for CI/CD)
 Set these in your shell or `.env` file before running python:
 ```bash
-export INFLUX_URL="http://production-server:8086"
-export INFLUX_DB="Season2026_Final"
+export POSTGRES_DSN="http://production-server:8086"
+export POSTGRES_TABLE="Season2026_Final"
 ```
 
 ### Option B: Runtime Configuration (Best for Scripts/Notebooks)
 ```python
 import slicks
 
-slicks.connect_influxdb3(
-    url="http://192.168.1.50:9000",
-    db="DynoTest_Day1"
+slicks.connect_timescaledb(
+    dsn="http://192.168.1.50:9000",
+    table="DynoTest_Day1"
 )
 ```
 
@@ -74,8 +74,8 @@ If you're ingesting raw CAN bus data (e.g., from a replay script or live logger)
 from slicks import WideWriter
 
 writer = WideWriter(
-    url="http://localhost:8086",
-    token="my-token",
+    dsn="http://localhost:8086",
+    "my-token",
     bucket="WFR26",
     measurement="WFR26",
     dbc_path="path/to/WFR26.dbc",

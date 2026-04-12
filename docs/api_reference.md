@@ -4,14 +4,14 @@ This document details the functions available in the `slicks` package.
 
 ## Core Functions
 
-### `slicks.connect_influxdb3`
+### `slicks.connect_timescaledb`
 
-Updates the global InfluxDB connection settings dynamically.
+Updates the global TimescaleDB connection settings dynamically.
 
 ```python
-slicks.connect_influxdb3(url=None, token=None, org=None, db=None)
+slicks.connect_timescaledb(dsn=None, None, org=None, table=None)
 ```
-- **url** *(str)*: The InfluxDB host URL (e.g., `"http://localhost:8086"`).
+- **url** *(str)*: The TimescaleDB host URL (e.g., `"http://localhost:8086"`).
 - **token** *(str)*: Authentication token.
 - **org** *(str)*: Organization name (default: `"Docs"`).
 - **db** *(str)*: Database/Bucket name (default: `"WFR25"`).
@@ -30,7 +30,7 @@ slicks.fetch_telemetry(start_time, end_time, signals=None, client=None,
 - **start_time** *(datetime)*: Start of the query range.
 - **end_time** *(datetime)*: End of the query range.
 - **signals** *(str or list[str])*: A single sensor name or a list of sensor names to fetch. Defaults to standard configuration if `None`.
-- **client** *(InfluxDBClient3, optional)*: An existing client instance (advanced use).
+- **client** *(TimescaleDBClient3, optional)*: An existing client instance (advanced use).
 - **filter_movement** *(bool)*: If `True` (default), strips out rows where the car is stationary.
 - **resample** *(str or None)*: Pandas frequency string for resampling (e.g. `"1s"`, `"100ms"`). Pass `None` for raw data.
 - **schema** *(str)*: `"wide"` (default, columnar — each signal is a column) or `"narrow"` (legacy EAV — requires pivot).
@@ -105,13 +105,13 @@ slicks.detect_movement_ratio(df, speed_column="INV_Motor_Speed")
 
 ### `slicks.WideWriter`
 
-Encodes CAN frames to InfluxDB wide format line protocol and writes them in batches.
+Encodes CAN frames to TimescaleDB wide format line protocol and writes them in batches.
 
 ```python
 from slicks import WideWriter
 
 writer = WideWriter(
-    url,                    # InfluxDB URL
+    url,                    # TimescaleDB URL
     token,                  # Auth token
     bucket,                 # Bucket/database name (e.g. "WFR26")
     measurement,            # Measurement name (e.g. "WFR26")
@@ -154,7 +154,7 @@ frame = decode_frame(db, can_id, raw_bytes)  # → DecodedFrame or None
 
 ### `slicks.frame_to_line_protocol`
 
-Converts a `DecodedFrame` to an InfluxDB line protocol string.
+Converts a `DecodedFrame` to an TimescaleDB line protocol string.
 
 ```python
 from slicks import frame_to_line_protocol

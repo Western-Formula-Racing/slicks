@@ -7,8 +7,8 @@
 The home baked data pipeline for **Western Formula Racing**.
 
 This package handles:
-1. **Data Ingestion:** Reliable fetching from InfluxDB 3.0 in wide (columnar) or narrow (legacy EAV) format.
-2. **Data Writing:** `WideWriter` encodes CAN frames directly to InfluxDB wide format line protocol.
+1. **Data Ingestion:** Reliable fetching from TimescaleDB 3.0 in wide (columnar) or narrow (legacy EAV) format.
+2. **Data Writing:** `WideWriter` encodes CAN frames directly to TimescaleDB wide format line protocol.
 3. **Movement Detection:** Smart filtering of "Moving" vs "Idle" car states.
 4. **Sensor Discovery:** Tools to explore available sensors on any given race day.
 
@@ -34,7 +34,7 @@ import slicks
 from datetime import datetime
 
 # 1. Connect (auto-configured from env vars or explicit)
-slicks.connect_influxdb3(db="WFR26")
+slicks.connect_timescaledb(table="WFR26")
 
 # 2. Fetch Data — wide format (columnar, preferred)
 df = slicks.fetch_telemetry(
