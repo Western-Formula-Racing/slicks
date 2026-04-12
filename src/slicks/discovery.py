@@ -1,149 +1,63 @@
 """
-Sensor discovery module.
+Sensor discovery module for PostgreSQL / TimescaleDB.
 
-Scans the database for all unique sensor names within a time range.
-For wide schema (default), uses an instant information_schema.columns metadata lookup.
-For narrow schema (legacy EAV), uses adaptive chunking with parallel execution.
+Scans the database schema for all unique sensor names within a wide table.
 """
 
 from __future__ import annotations
 
-import threading
 import warnings
-from datetime import datetime, timedelta
-from typing import List, Optional
-
-from tqdm.auto import tqdm
+from datetime import datetime
+from typing import List
+import pandas as pd
 
 from . import config
-from .fetcher import get_influx_client
-from .query_utils import adaptive_query, run_chunks_parallel, PermanentQueryError, quote_table
-from .writer import NON_SIGNAL_COLS
+from .fetcher import get_db_engine
 
+NON_SIGNAL_COLS = {'time', 'message_name', 'can_id'}
 
 def discover_sensors(
-    start_time: datetime,
-    end_time: datetime,
-    chunk_size_days: int = 7,
-    client=None,
+    start_time: datetime = None,
+    end_time: datetime = None,
+    chunk_size_days: int = 7,  # Kept for bw-compat API signatures
+    client=None,               # Kept for bw-compat
     show_progress: bool = True,
     schema: str = "wide",
 ) -> List[str]:
     """
-    Scan the database for ALL unique sensor names within the time range.
-
-    For ``schema="wide"`` (default), uses an instant ``information_schema.columns``
-    metadata lookup (no data scan, no adaptive bisection, ignores time range and
-    chunk params).
-
-    For ``schema="narrow"`` (legacy EAV, deprecated), uses adaptive chunking with
-    parallel execution to handle server resource limits efficiently.
-
-    Args:
-        start_time: Start of scan range (narrow schema only).
-        end_time: End of scan range (narrow schema only).
-        chunk_size_days: Days per chunk (default 7, narrow schema only).
-        client: Ignored (kept for backward compatibility).
-        show_progress: Show progress bar (default True, narrow schema only).
-        schema: "wide" (default, one column per signal) or "narrow" (legacy EAV, deprecated).
-
-    Returns:
-        Sorted list of unique sensor name strings.
+    Scan the database for ALL unique sensor names via information_schema metadata.
+    
+    In TimescaleDB, the wide format is permanent and we can securely retrieve 
+    the list of sensors without touching billions of data rows natively!
     """
-    db_schema = config.INFLUX_SCHEMA or "iox"
-    table = config.INFLUX_TABLE or config.INFLUX_DB
-
-    if schema == "wide":
-        # Instant metadata lookup — no data scan needed
-        cli = get_influx_client()
-        sql = (
-            f"SELECT column_name FROM information_schema.columns "
-            f"WHERE table_schema = '{db_schema}' AND table_name = '{table}'"
-        )
-        result = cli.query(query=sql)
-        if result.num_rows == 0:
-            return []
-        col = result.column("column_name")
-        return sorted(
-            v.as_py()
-            for v in col
-            if v.as_py() is not None and v.as_py() not in NON_SIGNAL_COLS
+    if schema != "wide":
+        warnings.warn(
+            "schema='narrow' logic is depreciated and unsupported for TimescaleDB.",
+            DeprecationWarning,
+            stacklevel=2,
         )
 
-    # --- narrow (legacy EAV) path — deprecated, wide schema is now standard ---
-    warnings.warn(
-        "schema='narrow' is deprecated and will be removed in a future release. "
-        "WFR has moved to wide schema — use schema='wide' (now the default).",
-        DeprecationWarning,
-        stacklevel=2,
-    )
+    table = config.POSTGRES_TABLE
+    # Strip quotes internally to check pure schema names just in case
+    raw_table = table.strip('"')
 
-    def _make_client():
-        return get_influx_client()
-
-    def _query_distinct(
-        client: InfluxDBClient3, t0: datetime, t1: datetime,
-    ) -> List[str]:
-        table_ref = quote_table(db_schema, table)
-        sql = f"""
-        SELECT DISTINCT "signalName"
-        FROM {table_ref}
-        WHERE time >= '{t0.isoformat()}Z'
-        AND time < '{t1.isoformat()}Z'
-        """
-        tbl = client.query(query=sql)
-        if tbl.num_rows == 0:
-            return []
-        col = tbl.column("signalName")
-        return [v.as_py() for v in col if v.as_py() is not None]
-
-    def _process_chunk(
-        client: InfluxDBClient3, t0: datetime, t1: datetime,
-    ) -> List[str]:
-        return adaptive_query(
-            client=client,
-            t0=t0,
-            t1=t1,
-            primary_fn=_query_distinct,
-            fallback_fn=None,
-            min_span=timedelta(seconds=10),
-            max_depth=5,
-        )
-
-    # Build chunk list
-    chunks = []
-    cur = start_time
-    while cur < end_time:
-        nxt = min(cur + timedelta(days=chunk_size_days), end_time)
-        if nxt <= cur:
-            break
-        chunks.append((cur, nxt))
-        cur = nxt
-
-    pbar = tqdm(
-        total=len(chunks),
-        desc="Discovering sensors",
-        unit="chunk",
-        disable=not show_progress,
-    )
-    pbar_lock = threading.Lock()
-
-    def on_chunk_done(idx: int) -> None:
-        with pbar_lock:
-            pbar.update(1)
-
+    engine = get_db_engine()
+    sql = f"""
+        SELECT column_name 
+        FROM information_schema.columns 
+        WHERE table_name = '{raw_table}'
+    """
+    
     try:
-        all_names = run_chunks_parallel(
-            client_factory=_make_client,
-            chunks=chunks,
-            query_fn=_process_chunk,
-            max_workers=4,
-            on_chunk_done=on_chunk_done,
+        df = pd.read_sql(sql, con=engine)
+        if df.empty:
+            return []
+            
+        columns = df['column_name'].tolist()
+        return sorted(
+            c for c in columns 
+            if c not in NON_SIGNAL_COLS
         )
-    except PermanentQueryError as e:
-        raise RuntimeError(f"Sensor discovery aborted: {e}") from e
-    finally:
-        pbar.close()
-
-    unique = sorted(set(all_names))
-    return unique
+    except Exception as e:
+        print(f"Error discovering sensors: {e}")
+        return []
