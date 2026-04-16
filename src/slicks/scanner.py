@@ -10,14 +10,28 @@ import threading
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from typing import Callable, Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Tuple
 
-from influxdb_client_3 import InfluxDBClient3
 from tqdm.auto import tqdm
 from zoneinfo import ZoneInfo
 
 from . import config
+from .fetcher import get_timescale_client
 from .query_utils import adaptive_query, run_chunks_parallel, PermanentQueryError
+
+
+class InfluxDBClient3:
+    """Compatibility wrapper preserving old constructor shape in scanner tests."""
+
+    def __init__(self, host: str = "", token: str = "", database: str = ""):
+        del host, token, database
+        self._client = get_timescale_client()
+
+    def query(self, sql: str):
+        return self._client.query(sql)
+
+    def close(self) -> None:
+        self._client.close()
 
 UTC = timezone.utc
 
@@ -334,7 +348,7 @@ def scan_data_availability(
         start: Start datetime (timezone-aware or naive UTC)
         end: End datetime (timezone-aware or naive UTC)
         timezone: Timezone for display (e.g., "America/Toronto", "UTC")
-        table: Table to scan (defaults to "iox.{INFLUX_DB}")
+        table: Table to scan (defaults to "{TIMESCALE_SCHEMA}.{TIMESCALE_TABLE}")
         bin_size: Granularity for scanning - "hour" or "day"
         include_counts: Whether to include row counts (slightly slower)
         show_progress: Show progress bar (works in Jupyter and terminal)
@@ -344,7 +358,7 @@ def scan_data_availability(
     
     Example:
         >>> import slicks
-        >>> slicks.connect_influxdb3(url="...", token="...", db="WFR25")
+        >>> slicks.connect_timescaledb(table="wfr25")
         >>> result = slicks.scan_data_availability(
         ...     start=datetime(2025, 1, 1),
         ...     end=datetime(2025, 1, 31),
@@ -369,8 +383,8 @@ def scan_data_availability(
     
     # Default table if not provided
     if not table:
-        schema = config.INFLUX_SCHEMA or "iox"
-        table_name = config.INFLUX_TABLE or config.INFLUX_DB
+        schema = config.TIMESCALE_SCHEMA or "public"
+        table_name = config.TIMESCALE_TABLE
         table = f"{schema}.{table_name}"
     
     # We still use _quote_table here because `table` might be passed in as "schema.table"
@@ -445,15 +459,15 @@ def _fetch_bins_adaptive(
 ) -> Iterable[Tuple[datetime, int]]:
     """Iterate over bucket start times with counts using parallel adaptive chunking."""
 
-    def _make_client() -> InfluxDBClient3:
+    def _make_client() -> Any:
         return InfluxDBClient3(
-            host=config.INFLUX_URL,
-            token=config.INFLUX_TOKEN,
-            database=config.INFLUX_DB,
+            host=getattr(config, "INFLUX_URL", ""),
+            token=getattr(config, "INFLUX_TOKEN", ""),
+            database=getattr(config, "INFLUX_DB", ""),
         )
 
     def query_grouped_bins(
-        client: InfluxDBClient3, t0: datetime, t1: datetime,
+        client: object, t0: datetime, t1: datetime,
     ) -> List[Tuple[datetime, int]]:
         sql = f"""
             SELECT
@@ -479,7 +493,7 @@ def _fetch_bins_adaptive(
         return rows
 
     def query_exists_per_bin(
-        client: InfluxDBClient3, t0: datetime, t1: datetime,
+        client: object, t0: datetime, t1: datetime,
     ) -> List[Tuple[datetime, int]]:
         cur = t0
         rows: List[Tuple[datetime, int]] = []
@@ -504,7 +518,7 @@ def _fetch_bins_adaptive(
     min_exists_span = step * 4
 
     def process_chunk(
-        client: InfluxDBClient3, t0: datetime, t1: datetime,
+        client: object, t0: datetime, t1: datetime,
     ) -> List[Tuple[datetime, int]]:
         """Process one top-level chunk using adaptive_query."""
         return adaptive_query(

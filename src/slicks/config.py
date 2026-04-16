@@ -5,17 +5,44 @@ from dotenv import load_dotenv
 # Load environment variables from .env file if it exists
 load_dotenv()
 
-# InfluxDB Configuration with Environment Overrides
-# This makes the package "Open Source Ready" - anyone can swap these out via .env
-INFLUX_URL: str = os.getenv("INFLUX_URL", "http://localhost:8086")
-INFLUX_TOKEN: str = os.getenv("INFLUX_TOKEN", "my-token") 
-INFLUX_ORG: str = os.getenv("INFLUX_ORG", "Docs") 
-INFLUX_DB: str = os.getenv("INFLUX_DB", "WFR25")
+POSTGRES_DSN: str = os.getenv(
+    "POSTGRES_DSN",
+    "postgresql://wfr:wfr_password@localhost:5432/wfr",
+)
+TIMESCALE_SCHEMA: str = os.getenv("TIMESCALE_SCHEMA", "public")
+TIMESCALE_TABLE: str = os.getenv("TIMESCALE_TABLE") or os.getenv("TIMESCALE_SEASON", "wfr25")
 
-# Schema and Table Configuration (defaulting to iox.INFLUX_DB pattern)
-INFLUX_SCHEMA: str = os.getenv("INFLUX_SCHEMA", "iox")
-# If env var is not set or empty, default to INFLUX_DB
-INFLUX_TABLE: str = os.getenv("INFLUX_TABLE") or INFLUX_DB
+# Backward compatibility aliases (legacy naming)
+INFLUX_URL: str = os.getenv("INFLUX_URL", "")
+INFLUX_TOKEN: str = os.getenv("INFLUX_TOKEN", "")
+INFLUX_ORG: str = os.getenv("INFLUX_ORG", "")
+INFLUX_DB: str = TIMESCALE_TABLE
+INFLUX_SCHEMA: str = TIMESCALE_SCHEMA
+INFLUX_TABLE: str = TIMESCALE_TABLE
+
+
+def _sync_legacy_aliases() -> None:
+    """Keep legacy INFLUX_* globals aligned for callers not yet migrated."""
+    global INFLUX_DB, INFLUX_SCHEMA, INFLUX_TABLE
+    INFLUX_DB = TIMESCALE_TABLE
+    INFLUX_SCHEMA = TIMESCALE_SCHEMA
+    INFLUX_TABLE = TIMESCALE_TABLE
+
+
+def connect_timescaledb(
+    dsn: Optional[str] = None,
+    schema: Optional[str] = None,
+    table: Optional[str] = None,
+) -> None:
+    """Update Timescale/Postgres connection settings used by slicks."""
+    global POSTGRES_DSN, TIMESCALE_SCHEMA, TIMESCALE_TABLE
+    if dsn:
+        POSTGRES_DSN = dsn
+    if schema:
+        TIMESCALE_SCHEMA = schema
+    if table:
+        TIMESCALE_TABLE = table
+    _sync_legacy_aliases()
 
 def connect_influxdb3(
     url: Optional[str] = None,
@@ -26,17 +53,14 @@ def connect_influxdb3(
     table: Optional[str] = None,
 ) -> None:
     """
-    Update the global configuration settings for InfluxDB connection.
-    
-    Call this before using any slicks functions to configure your database.
+    Backward-compatible wrapper that maps legacy Influx-style kwargs to
+    Timescale configuration.
     
     Args:
-        url: InfluxDB host URL (e.g., "https://your-instance.influxdb.cloud")
-        token: Your InfluxDB API token
-        org: Organization name (optional for InfluxDB 3.x)
-        db: Database/bucket name (e.g., "WFR25")
-        schema: IOx schema name (default: "iox")
-        table: IOx table name (default: same as db)
+        url/token/org are accepted for compatibility and ignored.
+        db: Legacy alias for table name.
+        schema: Database schema name.
+        table: Timescale table name.
     
     Example:
         >>> import slicks
@@ -47,21 +71,16 @@ def connect_influxdb3(
         ...     table="my_custom_table"
         ... )
     """
-    global INFLUX_URL, INFLUX_TOKEN, INFLUX_ORG, INFLUX_DB, INFLUX_SCHEMA, INFLUX_TABLE
-    if url: INFLUX_URL = url
-    if token: INFLUX_TOKEN = token
-    if org: INFLUX_ORG = org
-    
-    # If DB is updated, we might need to update the default table name if it wasn't overridden
-    if db: 
-        INFLUX_DB = db
-        # Only update table if it wasn't explicitly set to something else in this call
-        # and if it currently matches the OLD db name or is unset
-        if not table and (not INFLUX_TABLE or INFLUX_TABLE == db):
-            INFLUX_TABLE = db
+    global INFLUX_URL, INFLUX_TOKEN, INFLUX_ORG
+    if url:
+        INFLUX_URL = url
+    if token:
+        INFLUX_TOKEN = token
+    if org:
+        INFLUX_ORG = org
 
-    if schema: INFLUX_SCHEMA = schema
-    if table: INFLUX_TABLE = table
+    effective_table = table or db
+    connect_timescaledb(schema=schema, table=effective_table)
 
 
 # Default Sensor Registry

@@ -12,9 +12,7 @@ from __future__ import annotations
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta
-from typing import Callable, List, Optional, Sequence, Tuple, TypeVar
-
-from influxdb_client_3 import InfluxDBClient3
+from typing import Any, Callable, List, Optional, Sequence, Tuple, TypeVar
 
 T = TypeVar("T")
 
@@ -57,11 +55,11 @@ def is_permanent_error(exc: Exception) -> bool:
 # ---------------------------------------------------------------------------
 
 def adaptive_query(
-    client: InfluxDBClient3,
+    client: Any,
     t0: datetime,
     t1: datetime,
-    primary_fn: Callable[[InfluxDBClient3, datetime, datetime], List[T]],
-    fallback_fn: Optional[Callable[[InfluxDBClient3, datetime, datetime], List[T]]] = None,
+    primary_fn: Callable[[Any, datetime, datetime], List[T]],
+    fallback_fn: Optional[Callable[[Any, datetime, datetime], List[T]]] = None,
     min_span: Optional[timedelta] = None,
     max_depth: int = 10,
     _depth: int = 0,
@@ -115,9 +113,9 @@ def adaptive_query(
 # ---------------------------------------------------------------------------
 
 def run_chunks_parallel(
-    client_factory: Callable[[], InfluxDBClient3],
+    client_factory: Callable[[], Any],
     chunks: Sequence[Tuple[datetime, datetime]],
-    query_fn: Callable[[InfluxDBClient3, datetime, datetime], List[T]],
+    query_fn: Callable[[Any, datetime, datetime], List[T]],
     max_workers: int = 4,
     on_chunk_done: Optional[Callable[[int], None]] = None,
 ) -> List[T]:
@@ -159,7 +157,7 @@ def run_chunks_parallel(
 
     with ThreadPoolExecutor(max_workers=max_workers) as pool:
         future_to_idx: dict = {}
-        clients: list[InfluxDBClient3] = []
+        clients: list[Any] = []
 
         for idx, (t0, t1) in enumerate(chunks):
             client = client_factory()

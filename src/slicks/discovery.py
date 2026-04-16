@@ -16,7 +16,7 @@ from typing import List, Optional
 from tqdm.auto import tqdm
 
 from . import config
-from .fetcher import get_influx_client
+from .fetcher import get_influx_client, get_timescale_client
 from .query_utils import adaptive_query, run_chunks_parallel, PermanentQueryError, quote_table
 from .writer import NON_SIGNAL_COLS
 
@@ -50,8 +50,8 @@ def discover_sensors(
     Returns:
         Sorted list of unique sensor name strings.
     """
-    db_schema = config.INFLUX_SCHEMA or "iox"
-    table = config.INFLUX_TABLE or config.INFLUX_DB
+    db_schema = config.TIMESCALE_SCHEMA or "public"
+    table = config.TIMESCALE_TABLE
 
     if schema == "wide":
         # Instant metadata lookup — no data scan needed
@@ -82,7 +82,7 @@ def discover_sensors(
         return get_influx_client()
 
     def _query_distinct(
-        client: InfluxDBClient3, t0: datetime, t1: datetime,
+        client: object, t0: datetime, t1: datetime,
     ) -> List[str]:
         table_ref = quote_table(db_schema, table)
         sql = f"""
@@ -98,7 +98,7 @@ def discover_sensors(
         return [v.as_py() for v in col if v.as_py() is not None]
 
     def _process_chunk(
-        client: InfluxDBClient3, t0: datetime, t1: datetime,
+        client: object, t0: datetime, t1: datetime,
     ) -> List[str]:
         return adaptive_query(
             client=client,
