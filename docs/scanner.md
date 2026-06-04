@@ -9,10 +9,10 @@ import slicks
 from datetime import datetime
 
 # Configure connection first
-slicks.connect_influxdb3(
-    url="http://your-server:9000",
-    token="your-token",
-    db="WFR25"
+slicks.connect_timescaledb(
+    dsn="http://your-server:9000",
+    "your-token",
+    table="WFR25"
 )
 
 # Scan for data availability
@@ -73,7 +73,7 @@ slicks.scan_data_availability(
 | `start` | `datetime` | *required* | Start of scan range (UTC or timezone-aware) |
 | `end` | `datetime` | *required* | End of scan range |
 | `timezone` | `str` | `"UTC"` | Timezone for display (e.g., `"America/Toronto"`) |
-| `table` | `str` | `None` | Table to scan (defaults to `"iox.{INFLUX_DB}"`) |
+| `table` | `str` | `None` | Table to scan (defaults to `"iox.{POSTGRES_TABLE}"`) |
 | `bin_size` | `str` | `"hour"` | Granularity: `"hour"` or `"day"` |
 | `include_counts` | `bool` | `True` | Include row counts (slightly slower if `True`) |
 | `show_progress` | `bool` | `True` | Show progress bar during scan |

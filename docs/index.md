@@ -4,7 +4,7 @@ The home baked data pipeline for **Western Formula Racing**.
 
 This package handles:
 
-1. **Data Ingestion:** Reliable fetching from InfluxDB 3.0.
+1. **Data Ingestion:** Reliable fetching from TimescaleDB 3.0.
 
 2. **Movement Detection:** Smart filtering of "Moving" vs "Idle" car states.
 
@@ -29,7 +29,7 @@ import slicks
 from datetime import datetime
 
 # 1. Connect (Auto-configured or custom)
-slicks.connect_influxdb3(db="WFR25", influx_url="http://influxdb:9000", influx_token="apiv3_your_token")
+slicks.connect_timescaledb(table="WFR25", dsn="http://postgresdb:9000", "apiv3_your_token")
 
 # 2. Fetch Data (One-liner)
 df = slicks.fetch_telemetry(

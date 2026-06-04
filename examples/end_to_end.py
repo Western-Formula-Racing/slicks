@@ -14,11 +14,11 @@ def main():
     # Configure connection. 
     # For CI, these are pulled from environment variables (GitHub Secrets).
     # For local use, you can set these in a .env file or call configure() directly.
-    slicks.connect_influxdb3(
-        url=os.getenv("INFLUX_URL"),
-        token=os.getenv("INFLUX_TOKEN"),
+    slicks.connect_timescaledb(
+        dsn=os.getenv("POSTGRES_DSN"),
+        os.getenv(""),
         org=os.getenv("INFLUX_ORG"),
-        db=os.getenv("INFLUX_DB")
+        table=os.getenv("POSTGRES_TABLE")
     )
 
     # ---------------------------------------------------------
